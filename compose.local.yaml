@@ -5,6 +5,7 @@ services:
       - "127.0.0.1:4566:4566"
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
+      FLOCI_RUN_AS_ROOT: "true"
       FLOCI_HOSTNAME: floci
       FLOCI_BASE_URL: http://floci:4566
       FLOCI_STORAGE_MODE: persistent
