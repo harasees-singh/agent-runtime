@@ -6,11 +6,11 @@
         <artifactId>agent-runtime</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
-    <artifactId>runtime-persistence</artifactId>
+    <artifactId>persistence</artifactId>
     <dependencies>
         <dependency>
             <groupId>io.agentruntime</groupId>
-            <artifactId>runtime-core</artifactId>
+            <artifactId>core</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

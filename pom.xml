@@ -12,12 +12,12 @@
         <relativePath/>
     </parent>
     <modules>
-        <module>runtime-core</module>
-        <module>runtime-api</module>
-        <module>runtime-dispatcher</module>
-        <module>runtime-ecs-fargate</module>
-        <module>runtime-persistence</module>
-        <module>runtime-app</module>
+        <module>core</module>
+        <module>api</module>
+        <module>dispatcher</module>
+        <module>ecs-fargate</module>
+        <module>persistence</module>
+        <module>app</module>
     </modules>
     <properties>
         <java.version>21</java.version>
