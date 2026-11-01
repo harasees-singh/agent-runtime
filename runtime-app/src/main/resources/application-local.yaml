@@ -1,0 +1,3 @@
+runtime:
+  security:
+    local-tenant-headers: true

@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: agent-runtime
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/agent_runtime}
+    username: ${DATABASE_USER:runtime}
+    password: ${DATABASE_PASSWORD:local-runtime}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+runtime:
+  execution:
+    default-backend: ecs-fargate
+  ecs:
+    region: ${AWS_REGION:us-east-1}
+    endpoint: ${ECS_ENDPOINT:}
+    cluster: ${ECS_CLUSTER:agent-runtime-local}
+    task-definition: ${ECS_TASK_DEFINITION:agent-runtime-runner}
+    container: ${ECS_CONTAINER:runner}
+    subnets: ${ECS_SUBNETS:subnet-local}
+    security-groups: ${ECS_SECURITY_GROUPS:sg-local}

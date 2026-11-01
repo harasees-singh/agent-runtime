@@ -1,0 +1,61 @@
+services:
+  floci:
+    image: floci/floci:2.4.0
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      FLOCI_HOSTNAME: floci
+      FLOCI_BASE_URL: http://floci:4566
+      FLOCI_STORAGE_MODE: persistent
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+      FLOCI_SERVICES_ECS_MOCK: "false"
+      FLOCI_SERVICES_ECS_DOCKER_NETWORK: agent-runtime-local
+      FLOCI_SERVICES_ECS_IMAGE_PULL_BEHAVIOR: prefer-cached
+    volumes:
+      - floci-data:/app/data
+      - ${LOCAL_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+    networks: [runtime]
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: agent_runtime
+      POSTGRES_USER: runtime
+      POSTGRES_PASSWORD: local-runtime
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runtime -d agent_runtime"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [runtime]
+  runtime-service:
+    build: .
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DATABASE_URL: jdbc:postgresql://postgres:5432/agent_runtime
+      DATABASE_USER: runtime
+      DATABASE_PASSWORD: local-runtime
+      ECS_ENDPOINT: http://floci:4566
+      AWS_REGION: us-east-1
+      ECS_CLUSTER: ${ECS_CLUSTER:-agent-runtime-local}
+      ECS_TASK_DEFINITION: ${ECS_TASK_DEFINITION:-agent-runtime-runner}
+      ECS_CONTAINER: ${ECS_CONTAINER:-runner}
+      ECS_SUBNETS: ${ECS_SUBNETS:-subnet-local}
+      ECS_SECURITY_GROUPS: ${ECS_SECURITY_GROUPS:-sg-local}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      floci:
+        condition: service_started
+    networks: [runtime]
+networks:
+  runtime:
+    name: agent-runtime-local
+volumes:
+  floci-data:
+  postgres-data:
