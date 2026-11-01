@@ -9,7 +9,7 @@ This slice launches an ECS task and tracks its infrastructure state. It does not
 - `runtime-core`: domain models under `domain`, contracts under `port`, and execution errors under `exception`.
 - `runtime-dispatcher`: job orchestration under `application` and application errors under `exception`.
 - `runtime-api`: HTTP controllers under `controller` and request/response types under `dto`.
-- `runtime-ecs-fargate` and `runtime-persistence`: infrastructure implementations under `adapter`. Persistence uses Hibernate for mapped reads and jOOQ for atomic PostgreSQL writes and claims; Flyway owns the schema.
+- `runtime-ecs-fargate` and `runtime-persistence`: infrastructure implementations under `adapter`. Persistence uses Hibernate for mapped reads and state changes, and jOOQ for conflict-safe inserts and atomic lease claims; Flyway owns the schema.
 - `runtime-app`: application startup and dependency wiring.
 
 Dependencies point toward the core contracts. The application module assembles the adapters and dispatcher.
