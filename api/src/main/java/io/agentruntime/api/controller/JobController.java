@@ -39,7 +39,8 @@ public class JobController {
             case "REJECTED" -> HttpStatus.UNPROCESSABLE_ENTITY;
             default -> HttpStatus.SERVICE_UNAVAILABLE;
         };
-        if ("FAILED".equals(job.status()) || "SUCCEEDED".equals(job.status())) code = HttpStatus.OK;
+        if ("SUBMITTED".equals(job.submissionStatus()) &&
+                ("FAILED".equals(job.status()) || "SUCCEEDED".equals(job.status()))) code = HttpStatus.OK;
         return ResponseEntity.status(code).location(location)
                 .headers(code == HttpStatus.SERVICE_UNAVAILABLE ? retryHeader() : new HttpHeaders())
                 .body(JobView.from(job));
