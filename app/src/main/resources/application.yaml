@@ -17,13 +17,36 @@ management:
       exposure:
         include: health,info
 runtime:
+  callback-base-url: ${RUNTIME_CALLBACK_BASE_URL:http://runtime-service:8080}
+  agents:
+    default-engine: CLAUDE_CODE
+    engines:
+      claude-code:
+        default-model: SONNET_4_5
+        task-definition: ${CLAUDE_CODE_TASK_DEFINITION:agent-runtime-claude-code}
+        container: runner
+        models:
+          SONNET_4_5: claude-sonnet-4-5
+          OPUS_4_5: claude-opus-4-5
+      opencode:
+        default-model: SONNET_4_5
+        task-definition: ${OPENCODE_TASK_DEFINITION:agent-runtime-opencode}
+        container: runner
+        models:
+          SONNET_4_5: anthropic/claude-sonnet-4-5
+          OPUS_4_5: anthropic/claude-opus-4-5
+      codex:
+        default-model: GPT_6_1_SOL
+        task-definition: ${CODEX_TASK_DEFINITION:agent-runtime-codex}
+        container: runner
+        models:
+          GPT_6_1_SOL: gpt-6.1-sol
+          GPT_6_LUNA: gpt-6-luna
   execution:
     default-backend: ecs-fargate
   ecs:
     region: ${AWS_REGION:us-east-1}
     endpoint: ${ECS_ENDPOINT:}
     cluster: ${ECS_CLUSTER:agent-runtime-local}
-    task-definition: ${ECS_TASK_DEFINITION:agent-runtime-runner}
-    container: ${ECS_CONTAINER:runner}
     subnets: ${ECS_SUBNETS:subnet-local}
     security-groups: ${ECS_SECURITY_GROUPS:sg-local}

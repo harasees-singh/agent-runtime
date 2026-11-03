@@ -11,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface JobRepository {
-    Job createOrFind(String tenantId, String key, String hash, UUID jobId, UUID attemptId,
+    Job createOrFind(String tenantId, String key, String hash, UUID jobId, UUID attemptId, String callbackToken,
                      String agent, String inputJson, PreparedExecution plan);
     Optional<Job> find(UUID id, String tenantId);
     boolean claim(UUID jobId, Duration lease);
@@ -19,6 +19,7 @@ public interface JobRepository {
     void markUnknown(UUID jobId, String error);
     void markRejected(UUID jobId, String error);
     void updateObservation(UUID jobId, ExecutionObservation observation);
+    boolean complete(UUID jobId, UUID attemptId, String callbackToken, String result, String error);
     List<Job> claimRecoverable(int limit, Duration lease);
     List<Job> claimInspectable(int limit, Duration lease);
 }

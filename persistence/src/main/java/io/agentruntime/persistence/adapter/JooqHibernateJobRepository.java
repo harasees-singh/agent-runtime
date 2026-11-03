@@ -34,9 +34,15 @@ public class JooqHibernateJobRepository implements JobRepository {
     private static final Field<String> INPUT = field("input_json", String.class);
     private static final Field<String> STATUS = field("status", String.class);
     private static final Field<String> SUBMISSION = field("submission_status", String.class);
+    private static final Field<String> EXECUTION_STATUS = field("execution_status", String.class);
+    private static final Field<String> CALLBACK_TOKEN = field("callback_token", String.class);
     private static final Field<String> BACKEND = field("backend_id", String.class);
     private static final Field<String> REVISION = field("plan_revision", String.class);
     private static final Field<String> PLAN = field("plan_payload", String.class);
+    private static final Field<String> EXECUTION_HANDLE = field("execution_handle", String.class);
+    private static final Field<String> RESULT = field("result", String.class);
+    private static final Field<String> ERROR = field("error", String.class);
+    private static final Field<OffsetDateTime> CREATED = field("created_at", OffsetDateTime.class);
     private static final Field<OffsetDateTime> LEASE = field("lease_until", OffsetDateTime.class);
     private static final Field<OffsetDateTime> UPDATED = field("updated_at", OffsetDateTime.class);
 
@@ -58,24 +64,42 @@ public class JooqHibernateJobRepository implements JobRepository {
 
     @Override
     @Transactional
-    public Job createOrFind(String tenant, String key, String hash, UUID jobId, UUID attemptId,
+    public Job createOrFind(String tenant, String key, String hash, UUID jobId, UUID attemptId, String callbackToken,
                             String agent, String input, PreparedExecution plan) {
-        dsl.insertInto(JOBS)
+        Job inserted = dsl.insertInto(JOBS)
                 .set(ID, jobId).set(ATTEMPT, attemptId).set(TENANT, tenant).set(KEY, key)
                 .set(HASH, hash).set(AGENT, agent).set(INPUT, input).set(STATUS, "STARTING")
+                .set(DSL.field(DSL.name("callback_token"), String.class), callbackToken)
                 .set(SUBMISSION, "PENDING").set(BACKEND, plan.backendId())
                 .set(REVISION, plan.revision()).set(PLAN, plan.payload())
                 .set(LEASE, databaseTime().plusSeconds(30))
-                .onConflict(TENANT, KEY).doNothing().execute();
-        return entities.createQuery("select j from JobEntity j where j.tenantId = :tenant and j.idempotencyKey = :key", JobEntity.class)
-                .setParameter("tenant", tenant).setParameter("key", key).getSingleResult().toDomain();
+                .onConflict(TENANT, KEY).doNothing()
+                .returning(ID, ATTEMPT, TENANT, HASH, AGENT, INPUT, STATUS, SUBMISSION, EXECUTION_STATUS,
+                        CALLBACK_TOKEN, BACKEND, REVISION, PLAN, EXECUTION_HANDLE, RESULT, ERROR, CREATED, UPDATED)
+                .fetchOne(this::toDomain);
+        if (inserted != null) return inserted;
+        return dsl.select(ID, ATTEMPT, TENANT, HASH, AGENT, INPUT, STATUS, SUBMISSION, EXECUTION_STATUS,
+                        CALLBACK_TOKEN, BACKEND, REVISION, PLAN, EXECUTION_HANDLE, RESULT, ERROR, CREATED, UPDATED)
+                .from(JOBS).where(TENANT.eq(tenant).and(KEY.eq(key))).fetchOne(this::toDomain);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<Job> find(UUID id, String tenant) {
-        return entities.createQuery("select j from JobEntity j where j.id = :id and j.tenantId = :tenant", JobEntity.class)
-                .setParameter("id", id).setParameter("tenant", tenant).getResultStream().findFirst().map(JobEntity::toDomain);
+        return Optional.ofNullable(dsl.select(ID, ATTEMPT, TENANT, HASH, AGENT, INPUT, STATUS, SUBMISSION, EXECUTION_STATUS,
+                        CALLBACK_TOKEN, BACKEND, REVISION, PLAN, EXECUTION_HANDLE, RESULT, ERROR, CREATED, UPDATED)
+                .from(JOBS).where(ID.eq(id).and(TENANT.eq(tenant))).fetchOne(this::toDomain));
+    }
+
+    private Job toDomain(Record record) {
+        String backend = record.get(BACKEND);
+        String handle = record.get(EXECUTION_HANDLE);
+        return new Job(record.get(ID), record.get(ATTEMPT), record.get(TENANT), record.get(AGENT),
+                record.get(INPUT), record.get(HASH), record.get(STATUS), record.get(SUBMISSION),
+                record.get(EXECUTION_STATUS), record.get(CALLBACK_TOKEN),
+                new PreparedExecution(backend, record.get(REVISION), record.get(PLAN)),
+                handle == null ? null : new ExecutionRef(backend, handle), record.get(RESULT), record.get(ERROR),
+                record.get(CREATED).toInstant(), record.get(UPDATED).toInstant());
     }
 
     @Override
@@ -139,6 +163,19 @@ public class JooqHibernateJobRepository implements JobRepository {
             job.error = "Execution stopped without a runner result";
         }
         if (state != ExecutionObservation.STARTING) job.updatedAt = databaseTime().toInstant();
+    }
+
+    @Override
+    @Transactional
+    public boolean complete(UUID id, UUID attemptId, String callbackToken, String result, String error) {
+        JobEntity job = entities.find(JobEntity.class, id, LockModeType.PESSIMISTIC_WRITE);
+        if (job == null || !job.attemptId.equals(attemptId) || !job.callbackToken.equals(callbackToken)
+                || !"STARTING".equals(job.status)) return false;
+        job.result = result;
+        job.error = error;
+        job.status = error == null ? "SUCCEEDED" : "FAILED";
+        job.updatedAt = databaseTime().toInstant();
+        return true;
     }
 
     @Override

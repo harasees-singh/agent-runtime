@@ -2,3 +2,4 @@
 HLD.md
 **/target/
 .env.local
+.local/

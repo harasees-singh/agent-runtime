@@ -20,6 +20,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/v1/jobs")
 public class JobController {
+    public record Completion(UUID attemptId, String callbackToken, String result, String error) {}
     private final JobDispatcher dispatcher;
     private final boolean localTenantHeaders;
     public JobController(JobDispatcher dispatcher,
@@ -32,7 +33,7 @@ public class JobController {
                                            @RequestHeader(value = "X-Tenant-Id", required = false) String localTenant,
                                            Authentication auth, @Valid @RequestBody CreateJob body) {
         if (key.isBlank() || key.length() > 256) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid Idempotency-Key");
-        Job job = dispatcher.submit(tenant(auth, localTenant), key, body.agent(), body.input());
+        Job job = dispatcher.submit(tenant(auth, localTenant), key, body.agent(), body.engine(), body.model(), body.input().prompt());
         URI location = URI.create("/v1/jobs/" + job.id());
         HttpStatus code = switch (job.submissionStatus()) {
             case "SUBMITTED" -> HttpStatus.ACCEPTED;
@@ -51,6 +52,15 @@ public class JobController {
                        @RequestHeader(value = "X-Tenant-Id", required = false) String localTenant,
                        Authentication auth) {
         return JobView.from(dispatcher.current(id, tenant(auth, localTenant)));
+    }
+
+    @PostMapping("/{id}/complete")
+    public ResponseEntity<Void> complete(@PathVariable UUID id, @RequestBody Completion completion) {
+        if (completion.result() != null && completion.result().length() > 100_000)
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "Result exceeds 100 KB");
+        boolean accepted = dispatcher.complete(id, completion.attemptId(), completion.callbackToken(),
+                completion.result(), completion.error());
+        return accepted ? ResponseEntity.noContent().build() : ResponseEntity.status(HttpStatus.CONFLICT).build();
     }
 
     private String tenant(Authentication auth, String localTenant) {

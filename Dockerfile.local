@@ -1,0 +1,5 @@
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY app/target/app-0.1.0-SNAPSHOT.jar /app/runtime.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/runtime.jar"]

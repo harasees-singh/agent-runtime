@@ -20,10 +20,12 @@ public class JobEntity {
     public String status;
     @Column(name = "submission_status") public String submissionStatus;
     @Column(name = "execution_status") public String executionStatus;
+    @Column(name = "callback_token") public String callbackToken;
     @Column(name = "backend_id") public String backendId;
     @Column(name = "plan_revision") public String planRevision;
     @Column(name = "plan_payload") public String planPayload;
     @Column(name = "execution_handle") public String executionHandle;
+    @Column(columnDefinition = "text") public String result;
     public String error;
     @Column(name = "created_at") public Instant createdAt;
     @Column(name = "updated_at") public Instant updatedAt;
@@ -31,7 +33,7 @@ public class JobEntity {
     protected JobEntity() {}
     public Job toDomain() {
         return new Job(id, attemptId, tenantId, agent, inputJson, requestHash, status, submissionStatus,
-                executionStatus, new PreparedExecution(backendId, planRevision, planPayload),
-                executionHandle == null ? null : new ExecutionRef(backendId, executionHandle), error, createdAt, updatedAt);
+                executionStatus, callbackToken, new PreparedExecution(backendId, planRevision, planPayload),
+                executionHandle == null ? null : new ExecutionRef(backendId, executionHandle), result, error, createdAt, updatedAt);
     }
 }

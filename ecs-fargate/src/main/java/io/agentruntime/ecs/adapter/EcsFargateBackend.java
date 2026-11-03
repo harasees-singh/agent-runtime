@@ -6,6 +6,7 @@ import io.agentruntime.core.port.execution.ExecutionBackend;
 import io.agentruntime.core.domain.execution.ExecutionObservation;
 import io.agentruntime.core.domain.execution.ExecutionRef;
 import io.agentruntime.core.domain.execution.ExecutionRequest;
+import io.agentruntime.core.domain.execution.AgentEngine;
 import io.agentruntime.core.domain.execution.PreparedExecution;
 import io.agentruntime.core.domain.execution.RecoveryResult;
 import io.agentruntime.core.domain.execution.SubmissionResult;
@@ -19,11 +20,13 @@ import java.time.Instant;
 import java.time.Duration;
 
 public final class EcsFargateBackend implements ExecutionBackend {
-    public record Settings(String cluster, String taskDefinition, String container, List<String> subnets,
-                           List<String> securityGroups, String platformVersion) {}
+    public record EngineTarget(String taskDefinition, String container) {}
+    public record Settings(String cluster, java.util.Map<AgentEngine, EngineTarget> engines, List<String> subnets,
+                           List<String> securityGroups, String platformVersion, String callbackBaseUrl) {}
     private record Plan(String cluster, String taskDefinition, String container, List<String> subnets,
                         List<String> securityGroups, String platformVersion, String attemptId, String jobId,
-                        long preparedAtEpochMillis) {}
+                        long preparedAtEpochMillis, String callbackToken, String agent, String engine, String model,
+                        String prompt, String callbackBaseUrl) {}
     private record Handle(String cluster, String taskArn) {}
 
     private final EcsClient ecs;
@@ -37,11 +40,14 @@ public final class EcsFargateBackend implements ExecutionBackend {
     @Override public String id() { return "ecs-fargate"; }
 
     @Override public PreparedExecution prepare(ExecutionRequest request) {
+        EngineTarget target = settings.engines().get(request.engine());
+        if (target == null) throw new IllegalArgumentException("No ECS task definition configured for " + request.engine().id());
         try {
             return new PreparedExecution(id(), "1", json.writeValueAsString(new Plan(
-                    settings.cluster(), settings.taskDefinition(), settings.container(),
+                    settings.cluster(), target.taskDefinition(), target.container(),
                     settings.subnets(), settings.securityGroups(), settings.platformVersion(),
-                    request.attemptId().toString(), request.jobId().toString(), Instant.now().toEpochMilli())));
+                    request.attemptId().toString(), request.jobId().toString(), Instant.now().toEpochMilli(),
+                    request.callbackToken(), request.agent(), request.engine().id(), request.model(), request.prompt(), settings.callbackBaseUrl())));
         } catch (JsonProcessingException e) { throw new IllegalStateException("Could not prepare ECS launch", e); }
     }
 
@@ -57,9 +63,12 @@ public final class EcsFargateBackend implements ExecutionBackend {
                 .subnets(p.subnets()).securityGroups(p.securityGroups())
                 .assignPublicIp(AssignPublicIp.DISABLED).build()).build();
         var overrides = TaskOverride.builder().containerOverrides(ContainerOverride.builder()
-                .name(p.container()).environment(
-                        KeyValuePair.builder().name("RUNTIME_JOB_ID").value(p.jobId()).build(),
-                        KeyValuePair.builder().name("RUNTIME_ATTEMPT_ID").value(p.attemptId()).build())
+                .name(p.container()).environment(List.of(
+                        env("RUNTIME_JOB_ID", p.jobId()), env("RUNTIME_ATTEMPT_ID", p.attemptId()),
+                        env("RUNTIME_CALLBACK_TOKEN", p.callbackToken()),
+                        env("RUNTIME_ENGINE", p.engine()), env("RUNTIME_AGENT", p.agent()), env("RUNTIME_MODEL", p.model()),
+                        env("RUNTIME_PROMPT", p.prompt()),
+                        env("RUNTIME_API_BASE_URL", p.callbackBaseUrl())))
                 .build()).build();
         return RunTaskRequest.builder().cluster(p.cluster()).taskDefinition(p.taskDefinition())
                 .launchType(LaunchType.FARGATE).platformVersion(p.platformVersion()).count(1)
@@ -67,6 +76,10 @@ public final class EcsFargateBackend implements ExecutionBackend {
                 .overrides(overrides).tags(
                         Tag.builder().key("runtime:job-id").value(p.jobId()).build(),
                         Tag.builder().key("runtime:attempt-id").value(p.attemptId()).build()).build();
+    }
+
+    private KeyValuePair env(String name, String value) {
+        return KeyValuePair.builder().name(name).value(value).build();
     }
 
     private ExecutionRef ref(String cluster, String arn) {

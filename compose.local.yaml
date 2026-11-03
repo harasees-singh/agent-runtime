@@ -34,7 +34,9 @@ services:
       retries: 20
     networks: [runtime]
   runtime-service:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.local
     environment:
       SPRING_PROFILES_ACTIVE: local
       DATABASE_URL: jdbc:postgresql://postgres:5432/agent_runtime
@@ -43,8 +45,9 @@ services:
       ECS_ENDPOINT: http://floci:4566
       AWS_REGION: us-east-1
       ECS_CLUSTER: ${ECS_CLUSTER:-agent-runtime-local}
-      ECS_TASK_DEFINITION: ${ECS_TASK_DEFINITION:-agent-runtime-runner}
-      ECS_CONTAINER: ${ECS_CONTAINER:-runner}
+      CLAUDE_CODE_TASK_DEFINITION: ${CLAUDE_CODE_TASK_DEFINITION:-agent-runtime-claude-code}
+      OPENCODE_TASK_DEFINITION: ${OPENCODE_TASK_DEFINITION:-agent-runtime-opencode}
+      CODEX_TASK_DEFINITION: ${CODEX_TASK_DEFINITION:-agent-runtime-codex}
       ECS_SUBNETS: ${ECS_SUBNETS:-subnet-local}
       ECS_SECURITY_GROUPS: ${ECS_SECURITY_GROUPS:-sg-local}
     ports:

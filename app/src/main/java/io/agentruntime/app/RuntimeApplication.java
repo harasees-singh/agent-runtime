@@ -9,6 +9,7 @@ import io.agentruntime.persistence.adapter.JooqHibernateJobRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.*;
 import org.jooq.DSLContext;
 import jakarta.persistence.EntityManager;
@@ -30,6 +31,7 @@ import java.util.List;
 @SpringBootApplication(scanBasePackages = "io.agentruntime")
 @EntityScan(basePackages = "io.agentruntime.persistence.entity")
 @EnableScheduling
+@EnableConfigurationProperties(AgentConfigurationProperties.class)
 public class RuntimeApplication {
     public static void main(String[] args) { SpringApplication.run(RuntimeApplication.class, args); }
 
@@ -47,20 +49,24 @@ public class RuntimeApplication {
         return builder.build();
     }
 
-    @Bean ExecutionBackend ecsBackend(EcsClient ecs, ObjectMapper json,
+    @Bean ExecutionBackend ecsBackend(EcsClient ecs, ObjectMapper json, AgentConfigurationProperties agents,
             @Value("${runtime.ecs.cluster}") String cluster,
-            @Value("${runtime.ecs.task-definition}") String taskDefinition,
-            @Value("${runtime.ecs.container}") String container,
             @Value("${runtime.ecs.subnets}") List<String> subnets,
             @Value("${runtime.ecs.security-groups}") List<String> securityGroups,
-            @Value("${runtime.ecs.platform-version:LATEST}") String platformVersion) {
-        return new EcsFargateBackend(ecs, json, new EcsFargateBackend.Settings(cluster, taskDefinition,
-                container, subnets, securityGroups, platformVersion));
+            @Value("${runtime.ecs.platform-version:LATEST}") String platformVersion,
+            @Value("${runtime.callback-base-url:http://runtime-service:8080}") String callbackBaseUrl) {
+        var targets = agents.enginesById().entrySet().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
+                java.util.Map.Entry::getKey, entry -> new EcsFargateBackend.EngineTarget(
+                        entry.getValue().taskDefinition(), entry.getValue().container())));
+        return new EcsFargateBackend(ecs, json, new EcsFargateBackend.Settings(cluster, targets,
+                subnets, securityGroups, platformVersion, callbackBaseUrl));
     }
 
     @Bean JobDispatcher dispatcher(JobRepository jobs, List<ExecutionBackend> backends, ObjectMapper json,
+            AgentConfigurationProperties agents,
             @Value("${runtime.execution.default-backend:ecs-fargate}") String defaultBackend) {
-        return new JobDispatcher(jobs, backends, defaultBackend, json);
+        return new JobDispatcher(jobs, backends, defaultBackend, json, agents.defaultEngine(),
+                agents.defaultModels(), agents.modelIds());
     }
 
     @Bean SecurityFilterChain security(HttpSecurity http,
@@ -68,6 +74,7 @@ public class RuntimeApplication {
         http.csrf(csrf -> csrf.disable());
         if (local) http.authorizeHttpRequests(a -> a.anyRequest().permitAll());
         else http.authorizeHttpRequests(a -> a.requestMatchers("/actuator/health/**").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/v1/jobs/*/complete").permitAll()
                 .anyRequest().authenticated()).oauth2ResourceServer(o -> o.jwt(Customizer.withDefaults()));
         return http.build();
     }

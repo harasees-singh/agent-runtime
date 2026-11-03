@@ -7,6 +7,8 @@ import io.agentruntime.core.domain.job.Job;
 import io.agentruntime.core.domain.execution.ExecutionObservation;
 import io.agentruntime.core.domain.execution.ExecutionRef;
 import io.agentruntime.core.domain.execution.ExecutionRequest;
+import io.agentruntime.core.domain.execution.AgentEngine;
+import io.agentruntime.core.domain.execution.AgentModel;
 import io.agentruntime.core.domain.execution.PreparedExecution;
 import io.agentruntime.core.domain.execution.RecoveryResult;
 import io.agentruntime.core.domain.execution.SubmissionResult;
@@ -23,22 +25,26 @@ class JobDispatcherTest {
     private final ObjectMapper json = new ObjectMapper();
     private final MemoryJobs jobs = new MemoryJobs();
     private final FakeBackend backend = new FakeBackend(jobs);
-    private final JobDispatcher dispatcher = new JobDispatcher(jobs, List.of(backend), "fake", json);
+    private final JobDispatcher dispatcher = new JobDispatcher(jobs, List.of(backend), "fake", json,
+            AgentEngine.CLAUDE_CODE,
+            Map.of(AgentEngine.CLAUDE_CODE, AgentModel.SONNET_4_5, AgentEngine.OPENCODE, AgentModel.SONNET_4_5),
+            Map.of(AgentEngine.CLAUDE_CODE, Map.of(AgentModel.SONNET_4_5, "claude-sonnet-4-5"),
+                    AgentEngine.OPENCODE, Map.of(AgentModel.SONNET_4_5, "anthropic/claude-sonnet-4-5")));
 
     @Test void persistsIntentBeforeLaunchAndReusesSameKey() throws Exception {
-        var first = dispatcher.submit("tenant-a", "key-1", "agent:1", json.readTree("{\"b\":2,\"a\":1}"));
+        var first = dispatcher.submit("tenant-a", "key-1", "agent:1", AgentEngine.CLAUDE_CODE, AgentModel.SONNET_4_5, "hello");
         assertEquals("SUBMITTED", first.submissionStatus());
         assertEquals(1, backend.submissions);
-        var retry = dispatcher.submit("tenant-a", "key-1", "agent:1", json.readTree("{\"a\":1,\"b\":2}"));
+        var retry = dispatcher.submit("tenant-a", "key-1", "agent:1", AgentEngine.CLAUDE_CODE, AgentModel.SONNET_4_5, "hello");
         assertEquals(first.id(), retry.id());
         assertEquals(1, backend.submissions);
         assertThrows(IdempotencyConflictException.class,
-                () -> dispatcher.submit("tenant-a", "key-1", "agent:1", json.readTree("{\"a\":9}")));
+                () -> dispatcher.submit("tenant-a", "key-1", "agent:1", AgentEngine.CLAUDE_CODE, AgentModel.SONNET_4_5, "different"));
     }
 
     @Test void uncertainLaunchKeepsStableJobForRecovery() throws Exception {
         backend.unknown = true;
-        var first = dispatcher.submit("tenant-a", "key-2", "agent:1", json.readTree("{}"));
+        var first = dispatcher.submit("tenant-a", "key-2", "agent:1", AgentEngine.CLAUDE_CODE, AgentModel.SONNET_4_5, "hello");
         assertEquals("UNKNOWN", first.submissionStatus());
         assertNull(first.executionRef());
         backend.unknown = false;
@@ -70,10 +76,10 @@ class JobDispatcherTest {
     private static class MemoryJobs implements JobRepository {
         final Map<String, Job> byKey = new HashMap<>();
         boolean leaseExpired;
-        public Job createOrFind(String tenant, String key, String hash, UUID id, UUID attempt, String agent,
+        public Job createOrFind(String tenant, String key, String hash, UUID id, UUID attempt, String callbackToken, String agent,
                                 String input, PreparedExecution plan) {
             return byKey.computeIfAbsent(tenant + "/" + key, ignored -> new Job(id, attempt, tenant, agent,
-                    input, hash, "STARTING", "PENDING", "UNKNOWN", plan, null, null, Instant.now(), Instant.now()));
+                    input, hash, "STARTING", "PENDING", "UNKNOWN", callbackToken, plan, null, null, null, Instant.now(), Instant.now()));
         }
         public Optional<Job> find(UUID id, String tenant) {
             return byKey.values().stream().filter(j -> j.id().equals(id) && j.tenantId().equals(tenant)).findFirst();
@@ -83,6 +89,7 @@ class JobDispatcherTest {
         public void markUnknown(UUID id, String error) { replace(id, j -> copy(j, "UNKNOWN", null)); }
         public void markRejected(UUID id, String error) { replace(id, j -> copy(j, "REJECTED", null)); }
         public void updateObservation(UUID id, ExecutionObservation state) { }
+        public boolean complete(UUID id, UUID attemptId, String token, String result, String error) { return false; }
         public List<Job> claimRecoverable(int limit, Duration lease) {
             if (!leaseExpired) return List.of();
             return byKey.values().stream().filter(j -> j.submissionStatus().equals("UNKNOWN")).toList();
@@ -93,7 +100,7 @@ class JobDispatcherTest {
         }
         private Job copy(Job j, String status, ExecutionRef ref) {
             return new Job(j.id(), j.attemptId(), j.tenantId(), j.agent(), j.inputJson(), j.requestHash(),
-                    j.status(), status, j.executionStatus(), j.plan(), ref, j.error(), j.createdAt(), Instant.now());
+                    j.status(), status, j.executionStatus(), j.callbackToken(), j.plan(), ref, j.result(), j.error(), j.createdAt(), Instant.now());
         }
     }
 }

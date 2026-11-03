@@ -7,6 +7,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record Job(UUID id, UUID attemptId, String tenantId, String agent, String inputJson,
-                  String requestHash, String status, String submissionStatus, String executionStatus,
-                  PreparedExecution plan, ExecutionRef executionRef, String error,
+                  String requestHash, String status, String submissionStatus, String executionStatus, String callbackToken,
+                  PreparedExecution plan, ExecutionRef executionRef, String result, String error,
                   Instant createdAt, Instant updatedAt) {}
